@@ -1,0 +1,9 @@
+*.png
+*.jpg
+*.csv
+*.log
+*.txt
+*.hdf5
+.ipynb_checkpoints/
+*.egg-info/
+__pycache__/

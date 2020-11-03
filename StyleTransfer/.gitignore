@@ -1,0 +1,11 @@
+*.pyc
+__pycache__/
+.ipynb_checkpoints/
+*.egg-info/
+/venv/
+*.pth
+runs/
+logs/
+weights/
+.ccls-cache/
+build/
