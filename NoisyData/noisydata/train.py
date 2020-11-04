@@ -150,7 +150,7 @@ class Trainer:
             self.callback.on_epoch_end(epoch)
 
             if self.lr_scheduler is not None:
-                new_lr = self.lr_scheduler.update(epoch)
+                new_lr = self.lr_scheduler(epoch)
                 if abs(new_lr - self.optimizer.lr) > 1e-8:
                     Logging.logging("New Learning rate : {:.5f}".format(new_lr))
                     self.optimizer.lr = new_lr
