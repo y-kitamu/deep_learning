@@ -1,5 +1,6 @@
 import datetime
 import os
+import csv
 
 from tensorflow.keras.callbacks import CSVLogger, ModelCheckpoint, LearningRateScheduler
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
@@ -21,6 +22,28 @@ def plot_history(history):
     axes[1].set_xlabel("epoch")
     axes[1].set_ylabel("accuracy")
     axes[1].set_legend(["train", "test"], loc="upper left")
+    plt.show()
+
+
+def plot_csv(csv_filename):
+    with open(csv_filename, "r") as f:
+        csv_reader = csv.reader(f)
+        header = next(csv_reader)
+        rows = [[] for _ in header]
+        for row in csv_reader:
+            for idx, val in enumerate(row):
+                rows[idx].append(float(val))
+
+    metrics = ["accuracy", "loss"]
+    fig, axes = plt.subplots(1, len(metrics), figsize=(len(metrics) * 7, 7))
+    for idx, metric in enumerate(metrics):
+        metric_idx = header.index(metric)
+        val_metric_idx = header.index("val_{}".format(metric))
+        # import pdb; pdb.set_trace()
+        axes[idx].plot(rows[metric_idx], label="Training {}".format(metric))
+        axes[idx].plot(rows[val_metric_idx], label="Validation {}".format(metric))
+        axes[idx].set_xlabel("epoch")
+        axes[idx].set_ylabel(metric)
     plt.show()
 
 

@@ -39,26 +39,30 @@ class CIFAR10Data:
         return x_train, y_train, x_val, y_val, x_test, y_test
 
     def get_data(self, subtract_mean=True, output_shape=None):
-        num_classes = len(self.classes)
-        x_train = self.x_train.astype(np.float32)
-        y_train = keras.utils.to_categorical(self.y_train, num_classes)
-
-        x_test = self.x_test.astype(np.float32)
-        y_test = keras.utils.to_categorical(self.y_test, num_classes)
-
-        if subtract_mean:
-            mean_image = np.mean(x_train, axis=0)
-            x_train -= mean_image
-            x_test -= mean_image
+        x_train, x_test = self.subtract_mean()
+        y_train, y_test = self.create_categorical()
         return self.split_train_val_test(x_train, y_train, x_test, y_test)
 
-    def get_noisy_data(self, noise_ratio=0.1, subtract_mean=True, output_shape=None):
+    def create_categorical(self, y_train=None, y_test=None):
+        y_train = self.y_train if y_train is None else y_train
+        y_test = self.y_test if y_test is None else y_test
         num_classes = len(self.classes)
-        x_train, y_train, x_test, y_test =self.get_data(subtract_mean, output_shape)
+        y_train = keras.utils.to_categorical(y_train, num_classes)
+        y_test = keras.utils.to_categorical(y_test, num_classes)
+        return y_train, y_test
 
-        y_train = self.y_train
+    def subtract_mean(self):
+        mean_image = np.mean(self.x_train, axis=0)
+        x_train = self.x_train - mean_image
+        x_test = self.x_test - mean_image
+        return x_train, x_test
+
+    def get_noisy_data(self, noise_ratio=0.1, subtract_mean=True, output_shape=None):
+        y_train = np.ndarray(self.y_train.shape, dtype=np.uint8)
+        y_train[...] = self.y_train[...]
         gt_y_train = np.ndarray(y_train.shape, dtype=np.uint8)
         gt_y_train[...] = y_train[...]
+        num_classes = len(self.classes)
         for i in range(num_classes):
             indices = np.where(gt_y_train == i)
             n_noise_data = int(indices[0].shape[0] * noise_ratio)
@@ -68,6 +72,6 @@ class CIFAR10Data:
             # Logging().logging("class index = {}, n_data = {}, n_noise_data = {}, n_diff = {}".format(
             #     i, indices[0].shape[0], n_noise_data, sum(y_train[indices] != gt_y_train[indices])))
             assert sum(y_train[indices] != gt_y_train[indices]) == n_noise_data
-        y_train = keras.utils.to_categorical(y_train, num_classes)
-
+        y_train, y_test = self.create_categorical(y_train)
+        x_train, x_test = self.subtract_mean()
         return self.split_train_val_test(x_train, y_train, x_test, y_test)

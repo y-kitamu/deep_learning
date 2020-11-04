@@ -1,91 +1,70 @@
-from tensorflow.keras.layers import Layer, Dense, Flatten, Conv2D, BatchNormalization, ReLU, GlobalAvgPool2D, Add
-from tensorflow.keras import Model, Sequential, Input
+from tensorflow.keras.layers import Dense, Conv2D, AveragePooling2D, Flatten, BatchNormalization, ReLU, Input
+from tensorflow.keras import layers, Model
+from tensorflow.keras.regularizers import l2
 
 
-class MyModel(Model):
-
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = Conv2D(32, 3, activation='relu')
-        self.bn1 = BatchNormalization()
-        self.flatten = Flatten()
-        self.d1 = Dense(128, activation='relu')
-        self.d2 = Dense(10, activation='softmax')
-
-    def call(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.flatten(x)
-        x = self.d1(x)
-        return self.d2(x)
+def conv2d_bn(x, filters, kernel_size, weight_decay=.0, strides=(1, 1)):
+    layer = Conv2D(filters=filters,
+                   kernel_size=kernel_size,
+                   strides=strides,
+                   padding='same',
+                   use_bias=False,
+                   kernel_regularizer=l2(weight_decay)
+                   )(x)
+    layer = BatchNormalization()(layer)
+    return layer
 
 
-class PreActConv2d(Layer):
-
-    def __init__(self, n_channel, kernel_size, strides, activation=ReLU, bn_axis=-1, **kwargs):
-        super().__init__(**kwargs)
-        self.bn = BatchNormalization(axis=bn_axis)
-        self.activation = activation()
-        self.conv = Conv2D(n_channel, kernel_size, strides, padding="same")
-
-    def call(self, input_tensor, training=False, *args, **kwargs):
-        x = self.bn(input_tensor, training=training)
-        x = self.activation(x, training=training)
-        return self.conv(x, training=training)
+def conv2d_bn_relu(x, filters, kernel_size, weight_decay=.0, strides=(1, 1)):
+    layer = conv2d_bn(x, filters, kernel_size, weight_decay, strides)
+    layer = ReLU()(layer)
+    return layer
 
 
-class PreActResBlock(Layer):
+def ResidualBlock(x, filters, kernel_size, weight_decay=.0, downsample=True):
+    if downsample:
+        residual_x = conv2d_bn(x, filters, kernel_size=1, strides=2)
+        stride = 2
+    else:
+        residual_x = x
+        stride = 1
+    residual = conv2d_bn_relu(x,
+                              filters=filters,
+                              kernel_size=kernel_size,
+                              weight_decay=weight_decay,
+                              strides=stride)
+    residual = conv2d_bn(residual,
+                         filters=filters,
+                         kernel_size=kernel_size,
+                         weight_decay=weight_decay,
+                         strides=1)
+    out = layers.add([residual_x, residual])
+    out = ReLU()(out)
+    return out
 
-    def __init__(self, in_channel, out_channel, kernel_size=3, activation="relu", **kwargs):
-        super(PreActResBlock, self).__init__(**kwargs)
-        ratio = int(out_channel / in_channel)
-        if in_channel != out_channel:
-            self.projection = Conv2D(
-                out_channel, kernel_size=ratio, strides=ratio, padding="same", name="projection")
-        self.conv1 = PreActConv2d(
-            out_channel, kernel_size, strides=ratio, name="conv1")
-        self.conv2 = PreActConv2d(
-            out_channel, kernel_size, strides=(1, 1), name="conv2")
-        self.add = Add(name="add")
+def ResNet18(classes, input_shape, weight_decay=1e-4):
+    input = Input(shape=input_shape)
+    x = input
+    x = conv2d_bn_relu(x, filters=64, kernel_size=(3, 3), weight_decay=weight_decay, strides=(1, 1))
 
-    def call(self, input_tensor, training=False, *args, **kwargs):
-        # import pdb; pdb.set_trace()
-        x = self.conv1(input_tensor, training=training)
-        x = self.conv2(x, training=training)
-        if hasattr(self, "projection"):
-            input_tensor = self.projection(input_tensor, training=training)
-        return self.add([x, input_tensor], training=training)
+    # conv2
+    x = ResidualBlock(x, filters=64, kernel_size=(3, 3), weight_decay=weight_decay, downsample=False)
+    x = ResidualBlock(x, filters=64, kernel_size=(3, 3), weight_decay=weight_decay, downsample=False)
 
+    # conv3
+    x = ResidualBlock(x, filters=128, kernel_size=(3, 3), weight_decay=weight_decay, downsample=True)
+    x = ResidualBlock(x, filters=128, kernel_size=(3, 3), weight_decay=weight_decay, downsample=False)
 
-class PreActResNet32(Model):
+    # conv4
+    x = ResidualBlock(x, filters=256, kernel_size=(3, 3), weight_decay=weight_decay, downsample=True)
+    x = ResidualBlock(x, filters=256, kernel_size=(3, 3), weight_decay=weight_decay, downsample=False)
 
-    def __init__(self):
-        super(PreActResNet32, self).__init__()
-        self.conv = Conv2D(32, 3, strides=(1, 1), padding="same", name="conv")
-        self.unit1 = self._make_unit(32, 32, 5, name="unit1")
-        self.unit2 = self._make_unit(32, 64, 5, name="unit2")
-        self.unit3 = self._make_unit(64, 128, 5, name="unit3")
-        self.bn = BatchNormalization(axis=-1, name="bn")
-        self.pool = GlobalAvgPool2D(data_format="channels_last", name="gap")
-        self.dense = Dense(10, activation="softmax", name="dense")
+    # conv5
+    x = ResidualBlock(x, filters=512, kernel_size=(3, 3), weight_decay=weight_decay, downsample=True)
+    x = ResidualBlock(x, filters=512, kernel_size=(3, 3), weight_decay=weight_decay, downsample=False)
 
-    def _make_unit(self, in_channel, out_channel, n_layer, name):
-        block = Sequential(name=name)
-        block.add(PreActResBlock(in_channel, out_channel))
-        for i in range(n_layer - 1):
-            block.add(PreActResBlock(out_channel, out_channel))
-        return block
-
-    def call(self, input_tensor, training=False):
-        x = self.conv(input_tensor, training=training)
-        x = self.unit1(x, training=training)
-        x = self.unit2(x, training=training)
-        x = self.unit3(x, training=training)
-        x = self.bn(x, training=training)
-        x = self.pool(x, training=training)
-        return self.dense(x, training=training)
-
-    def summary(self):
-        x = Input(shape=(32, 32, 3))
-        model = Model(inputs=[x], outputs=self.call(x))
-        return model.summary()
+    x = AveragePooling2D(pool_size=(4, 4), padding="valid")(x)
+    x = Flatten()(x)
+    x = Dense(classes, activation="softmax")(x)
+    model = Model(input, x, name="ResNet18")
+    return model

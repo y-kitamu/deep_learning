@@ -53,13 +53,13 @@ class CSVLogger:
 
         with open(self.output_filename, 'w') as f:
             csv_writer = csv.writer(f)
-            csv_writer.writerow(metrics)
+            csv_writer.writerow(["epoch"] + metrics)
 
-    def logging(self):
+    def logging(self, epoch):
         with open(self.output_filename, 'a') as f:
             csv_writer = csv.writer(f)
-            csv_writer.writerow([
-                getattr(self.trainer, metric) for metric in self.metrics
+            csv_writer.writerow([epoch] + [
+                getattr(self.trainer, metric).result() for metric in self.metrics
             ])
 
 
