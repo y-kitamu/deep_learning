@@ -40,7 +40,7 @@ def create_noised_cifar10_data(noise_ratio=0.1):
         assert sum(y_train[indices] != gt_y_train[indices]) == n_noise_data
 
     x_train, x_val, y_train, y_val, gt_y_train, gt_y_val = train_test_split(
-        x_train, y_train, gt_y_train, test_size=0.1)
+        x_train, y_train, gt_y_train, test_size=0.2)
     return x_train, y_train, gt_y_train, x_val, y_val, gt_y_val, x_test, y_test
 
 

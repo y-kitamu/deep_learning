@@ -16,7 +16,6 @@ INIT_LR = 1e-1
 
 def lr_scheduler(epoch):
     new_lr = INIT_LR * (0.1 ** (epoch // 50))
-    print("new lf : {}".format(new_lr))
     return new_lr
 
 
@@ -37,7 +36,7 @@ class Trainer:
                  model,
                  loss=tf.keras.losses.SparseCategoricalCrossentropy(),
                  optimizer=tf.keras.optimizers.SGD(),
-                 lr_scheduler=None,
+                 lr_scheduler=lr_scheduler,
                  batch_size=160,
                  n_pred_pool=10,
                  min_label_update_epoch=70,
@@ -151,7 +150,10 @@ class Trainer:
             self.callback.on_epoch_end(epoch)
 
             if self.lr_scheduler is not None:
-                self.lr_scheduler.update(epoch)
+                new_lr = self.lr_scheduler.update(epoch)
+                if abs(new_lr - self.optimizer.lr) > 1e-8:
+                    Logging.logging("New Learning rate : {:.5f}".format(new_lr))
+                    self.optimizer.lr = new_lr
 
     def test(self, name="best_loss"):
         self.model.load_weights(os.path.join(self.model_output_dir, name))
