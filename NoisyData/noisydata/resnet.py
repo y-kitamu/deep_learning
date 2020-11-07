@@ -1,4 +1,4 @@
-from tensorflow.keras.layers import Dense, Conv2D, AveragePooling2D, Flatten, BatchNormalization, ReLU, Input
+from tensorflow.keras.layers import Dense, Conv2D, AveragePooling2D, Flatten, MaxPool2D, BatchNormalization, ReLU, Input
 from tensorflow.keras import layers, Model
 from tensorflow.keras.regularizers import l2
 
