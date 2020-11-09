@@ -1,33 +1,30 @@
 import tensorflow as tf
+from tensorflow.keras.losses import KLDivergence
 
 
-def entropy_loss(y_true, y_pred):
-    return -tf.math.reduce_sum(y_pred * tf.math.log(y_pred)) / y_pred.shape[0]
+class LabelOptimLoss(tf.keras.losses.Loss):
+    name = "LabelOptimLoss"
 
-
-class NoisyDataLoss(tf.keras.losses.Loss):
-
-    def __init__(self, alpha, beta, prior_dist, *args, **kwargs):
-        super().__init__(name="NoisyDataLoss", *args, **kwargs)
-
+    def __init__(self,
+                 alpha=1.2,
+                 beta=0.8,
+                 prior_dist=tf.constant([0.1] * 10),
+                 reduction=tf.keras.losses.Reduction.AUTO,
+                 name=None):
+        super(LabelOptimLoss, self).__init__(reduction, self.name if name is None else name)
         self.alpha = alpha
         self.beta = beta
         self.prior_dist = prior_dist
 
-        self.class_kl_loss = tf.keras.losses.KLDivergence()
-        self.softlabel_kl_loss = tf.keras.losses.KLDivergence()
-        self.entropy_loss = entropy_loss
+    @tf.function
+    def __call__(self, y_true, y_pred, sample_weight=None):
+        loss_c = KLDivergence()(y_true, y_pred)
 
-    def call(self, y_true, y_pred):
-        class_loss = self.class_kl_loss(y_true, y_pred)
+        pred_dist = tf.keras.backend.mean(y_pred, axis=0)
+        loss_p = self.alpha * KLDivergence()(self.prior_dist, pred_dist)
 
-        mean_pred = tf.math.reduce_mean(y_pred, axis=0)
-        sl_loss = self.softlabel_kl_loss(self.prior_dist, mean_pred)
+        loss_e = self.beta * tf.keras.backend.mean(tf.math.multiply(y_pred, tf.math.log(y_pred)))
 
-        pd_loss = self.entropy_loss(y_true, y_pred)
-
-        loss = class_loss + self.alpha * sl_loss + self.beta * pd_loss
-        # print("\rloss : {:.3f} = {:.3f} + {:.3f} + {:.3f}".format(
-        #     loss.numpy(), class_loss.numpy(), self.alpha * sl_loss.numpy(), self.beta * pd_loss.numpy()
-        # ), end="")
+        loss = tf.math.add(loss_c, loss_p)
+        loss = tf.math.subtract(loss, loss_e)
         return loss
