@@ -62,9 +62,10 @@ def _augment_and_crop_flawless_images(num_crop, filename, flawless_params, augme
     Args:
         num_crop (int) :
         filename (str) :
+        flawless_params (FlawlessParameters) :
+        augment_params (AugmentParameters) :
         output_image_size (int):
         num_channel (int) :
-        flawless_params (FlawlessParameters) :
     Return (np.array, np.array)
         cropped images array and labels array.
         shape of cropped images array is [num_crop, output_image_size, output_image_size,
@@ -123,6 +124,13 @@ def _augment_and_crop_flawless_images(num_crop, filename, flawless_params, augme
 
 
 def _augment_and_crop_flaw_image(filename, aug_params, num_channel, output_image_size):
+    """
+    Args:
+        filename (str):
+        aug_params (AugmentParameters):
+        num_channel (int) :
+        ouptut_image_size (int) :
+    """
     image = cv2.imread(filename, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
     if len(image.shape) == 2:
         if num_channel == 3:
@@ -153,6 +161,9 @@ def random_rotate_and_scale_and_shift_crop(img, aug_params, output_size=24):
 
 class TrainDataGenerator:
     """
+    Args:
+        config (DictConfig):
+        is_train (bool):
     """
 
     def __init__(self, config: DictConfig, is_train=True):
@@ -215,19 +226,9 @@ class TrainFlawlessDataGenerator:
     [num_flawless_per_batch, output_image_size, output_image_size, num_channel].
 
     Args:
-        input_image_dir (str)        : Path to input image directory
-        num_flawless_per_batch (int) : Number of flawless images per each training batch
-        num_files_per_batch (int)    : Number of files used to create a single batch.
-            For example, if num_files_per_batch is 1, all cropped flawless images in a single batch
-            are cropped from the same image file.
-        output_image_size (int)      : Output batch image size
-        num_channel (int)            : Number of input and output image channel
-        background_class_idx (int)   :
-        edge_class_idx (int)         :
-        edge_ratio (float)           : Edge image ratio of each output batch.
-            `judege_edge` method judge whether the cropped image is edge or background.
-        max_thresh (float)           : Parameter used in `judge_edge`
-        variance_thresh (float)      : Parameter used in `judge_edge`
+        params (DatasetParameters):
+        input_image_dir (str):
+        num_flawless_per_batch (int):
     """
 
     def __init__(self, params, input_image_dir, num_flawless_per_batch):

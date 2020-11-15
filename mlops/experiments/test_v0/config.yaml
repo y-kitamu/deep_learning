@@ -6,7 +6,7 @@ dataset:
     train_data_root: /home/kitamura/dataset/NEUMetalSurfaceDefects/train
     val_data_root: /home/kitamura/dataset/NEUMetalSurfaceDefects/valid
     batch_size: 120
-    output_image_size: 64
+    output_image_size: 32
     num_channel: 3
   flawless:
     # flawless class (background and edge) indices
@@ -30,7 +30,7 @@ train:
   # transfered_model:
   # ouput_dir:
   epochs: 100
-  steps_per_epoch: 375000
+  steps_per_epoch: 1000
   validation_steps: 100
   weight_decay: 1e-4
   optimizer: Adam

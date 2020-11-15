@@ -19,7 +19,7 @@ def train(cfg):
 
     resnet = tf.keras.applications.ResNet50(include_top=False, weights="imagenet", classes=classes)
     top = tf.keras.Sequential()
-    top.add(Conv2D(classes, kernel_size=2))
+    top.add(Conv2D(classes, kernel_size=1))
     top.add(GlobalAvgPool2D())
     input = Input(shape=(image_size, image_size, num_channel))
     x = resnet(input)
