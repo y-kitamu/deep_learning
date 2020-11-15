@@ -1,0 +1,39 @@
+all:
+  experiment_name: test_v0
+  cuda_visible_devices: 0
+dataset:
+  overall:
+    train_data_root: /home/kitamura/dataset/NEUMetalSurfaceDefects/train
+    val_data_root: /home/kitamura/dataset/NEUMetalSurfaceDefects/valid
+    batch_size: 120
+    output_image_size: 64
+    num_channel: 3
+  flawless:
+    # flawless class (background and edge) indices
+    classes: [0, 5]
+    ratios: [0.6, 0.6]  # relative to flaws (i.e. relative to sum of ${dataset}.${flaws}.${ratios})
+    num_files_per_batch: 6
+    max_thresh: 100
+    variance_thresh: 300
+    num_augment: 1
+    num_process: 6
+  flaws:
+    # flaw class indices
+    classes: [1, 2, 3, 4]
+    ratios: [0.1, 1.0, 1.0, 1.0]
+    num_process: 6
+  augment:
+    min_scale: 1.0
+    max_scale: 1.0
+    shift_range: 8
+train:
+  # transfered_model:
+  # ouput_dir:
+  epochs: 100
+  steps_per_epoch: 375000
+  validation_steps: 100
+  weight_decay: 1e-4
+  optimizer: Adam
+  initial_lr: 1e-3
+
+# test:
