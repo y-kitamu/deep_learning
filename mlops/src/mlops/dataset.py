@@ -10,6 +10,105 @@ import tensorflow as tf
 import cv2
 
 
+def _judge_edge(roi, max_thresh=1500, variance_thresh=7500):
+    return roi.max() > max_thresh and roi.var() > variance_thresh
+
+
+def _augment_and_crop_flawless_images(num_crop,
+                                      filename,
+                                      output_image_size,
+                                      num_channel,
+                                      background_class_idx=0,
+                                      edge_class_idx=5,
+                                      edge_ratio=0.0,
+                                      max_thresh=1500,
+                                      variance_thresh=7500,
+                                      num_augment=1):
+    """
+    Args:
+        num_crop (int) :
+        filename (str) :
+        output_image_size (int):
+        num_channel (int) :
+        edge_ratio (float) :
+        judge_edge_func (function) :
+    Return (np.array, np.array)
+        cropped images array and labels array.
+        shape of cropped images array is [num_crop, output_image_size, output_image_size,
+        num_channel] and shape of labels array is [num_crop].
+    """
+    images_array = np.zeros((num_crop, output_image_size, output_image_size, num_channel),
+                            dtype=np.float32)
+    labels_array = np.zeros(num_crop)
+    num_edge = 0 if edge_ratio is None else int(num_crop * edge_ratio)
+    num_background = num_crop - num_edge
+
+    image = cv2.imread(filename, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+    if len(image.shape) == 2:
+        assert num_channel == 1
+        image = image[..., None]
+
+    delta = int(output_image_size / 2)
+    mask_thresh = output_image_size / 4
+    for i in range(0, num_crop, num_augment):
+        # repeat random crop until target (edge or background) image is obtained
+        while True:
+            # random crop from source image
+            center_x = int(np.random.rand() * (image.shape[1] - output_image_size)) + delta
+            center_y = int(np.random.rand() * (image.shape[0] - output_image_size)) + delta
+            roi = image[center_y - delta:center_y + delta, center_x - delta:center_x + delta]
+            # check if cropped image is valid (not masked)
+            if (roi[0, :, 0] == 0).sum() > mask_thresh or \
+               (roi[-1, :, 0] == 0).sum() > mask_thresh or \
+               (roi[:, 0, 0] == 0).sum() > mask_thresh or (roi[:, -1, 0] == 0).sum() > mask_thresh:
+                continue
+
+            # judge edge of label
+            is_edge = _judge_edge(roi, max_thresh, variance_thresh)
+            if num_edge <= 0:
+                images_array[i, ...] = random_rotate_and_scale_and_shift(roi)
+                labels_array[i] = edge_class_idx if is_edge else background_class_idx
+                break
+            if is_edge and num_edge > 0:
+                images_array[i, ...] = random_rotate_and_scale_and_shift(roi)
+                labels_array[i] = edge_class_idx
+                num_edge -= 1
+                break
+            if not is_edge and num_background > 0:
+                images_array[i, ...] = random_rotate_and_scale_and_shift(roi)
+                labels_array[i] = background_class_idx
+                num_background -= 1
+                break
+    return images_array, labels_array
+
+
+def _augment_and_crop_flaw_image(filename, output_image_size, num_channel, shift_range):
+    image = cv2.imread(filename, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+    if len(image.shape) == 2:
+        assert num_channel == 1
+        image = image[..., None]
+
+    image = random_rotate_and_scale_and_shift(image, shift_range=shift_range)
+    height, width = image.shape[:2]
+    cx, cy = int(width / 2), int(height / 2)
+    offset = int(output_image_size / 2)
+    image = image[cy - offset:cy + offset, cx - offset:cx + offset]
+    return image
+
+
+def random_rotate_and_scale_and_shift(img, min_scale=1.0, max_scale=1.0, shift_range=8):
+    angle = int(random.uniform(0, 2 * np.pi))
+    scale = int(random.uniform(min_scale, max_scale))
+    shift = np.random.randint(-shift_range, shift_range + 1, 2)
+    height, width = img.shape[:2]
+    matrix = cv2.getRotationMatrix2D((int(width / 2), int(height / 2)), angle, scale)
+    matrix[:, 2] += shift
+    img = cv2.warpAffine(img, matrix, (width, height))
+    if len(img.shape) == 2:
+        img = img[..., None]
+    return img
+
+
 class TrainDataGenerator:
     """
     """
@@ -133,6 +232,8 @@ class TrainFlawlessDataGenerator:
         self.sampling_weights = None
         self.file_que = queue.Queue()
 
+        self.pool = mp.Pool(process_num)
+
         self._check_variables_assertion()
 
     def _check_variables_assertion(self):
@@ -141,6 +242,11 @@ class TrainFlawlessDataGenerator:
         assert len(self.file_list) > 0
         assert not self.edge_ratio > 1.0
         assert not self.edge_ratio < 0.0
+
+    def __del__(self):
+        self.pool.terminate()
+        self.pool = None
+        super().__del__()
 
     def __call__(self):
         """
@@ -154,68 +260,33 @@ class TrainFlawlessDataGenerator:
         num_crops_per_image = int(self.num_flawless_per_batch / self.num_files_per_batch)
         while True:
             remaining = self.num_flawless_per_batch
+            queues = []
             while (remaining > 0):
                 num_crop = min(remaining, num_crops_per_image)
                 filename = self._get_next_file()
-                images, labels = self._crop_image(num_crop, filename)
-                images_array[remaining - num_crop:remaining] = images
-                labels_array[remaining - num_crop:remaining] = labels
+                queues.append(
+                    self.pool.apply_async(_augment_and_crop_flawless_images, (
+                        num_crop,
+                        filename,
+                        self.output_image_size,
+                        self.num_channel,
+                        self.background_class_idx,
+                        self.edge_class_idx,
+                        self.edge_ratio,
+                        self.max_thresh,
+                        self.variance_thresh,
+                    )))
+                # images, labels = self._crop_image(num_crop, filename)
                 remaining -= num_crop
+
+            start_idx = 0
+            for que in queues:
+                images, labels = que.get()
+                num_element = labels.shape[0]
+                images_array[start_idx:start_idx + num_element] = images
+                labels_array[start_idx:start_idx + num_element] = labels
+                start_idx += num_element
             yield images_array, labels_array
-
-    def _crop_image(self, num_crop, filename):
-        """
-        Args:
-            num_crop (int) :
-        Return (np.array, np.array)
-            cropped images array and labels array.
-            shape of cropped images array is [num_crop, output_image_size, output_image_size,
-            num_channel] and shape of labels array is [num_crop].
-        """
-        images_array = np.zeros(
-            (num_crop, self.output_image_size, self.output_image_size, self.num_channel),
-            dtype=np.float32)
-        labels_array = np.zeros(num_crop)
-        num_edge = int(num_crop * self.edge_ratio)
-        num_background = num_crop - num_edge
-
-        image = cv2.imread(filename, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
-        if len(image.shape) == 2:
-            assert self.num_channel == 1
-            image = image[..., None]
-
-        delta = int(self.output_image_size / 2)
-        mask_thresh = self.output_image_size / 4
-        for i in range(num_crop):
-            # repeat random crop until target (edge or background) image is obtained
-            while True:
-                # random crop from source image
-                center_x = int(np.random.rand() * (image.shape[1] - self.output_image_size)) + delta
-                center_y = int(np.random.rand() * (image.shape[0] - self.output_image_size)) + delta
-                roi = image[center_y - delta:center_y + delta, center_x - delta:center_x + delta]
-                # check if cropped image is valid (not masked)
-                if (roi[0, :, 0] == 0).sum() > mask_thresh or \
-                   (roi[-1, :, 0] == 0).sum() > mask_thresh or \
-                   (roi[:, 0, 0] == 0).sum() > mask_thresh or (roi[:, -1, 0] == 0).sum() > mask_thresh:
-                    continue
-
-                # judge edge of label
-                if self.is_divide_edge:
-                    is_edge = self._judge_edge(roi)
-                    if is_edge and num_edge > 0:
-                        images_array[i, ...] = roi
-                        labels_array[i] = self.edge_class_idx
-                        num_edge -= 1
-                        break
-                    if not is_edge and num_background > 0:
-                        images_array[i, ...] = roi
-                        labels_array[i] = self.background_class_idx
-                        num_background -= 1
-                        break
-                else:
-                    images_array[i, ...] = roi
-                    break
-        return images_array, labels_array
 
     def _get_next_file(self):
         if self.file_que.empty():
@@ -225,9 +296,6 @@ class TrainFlawlessDataGenerator:
             for fname in random.sample(que_list, len(que_list)):
                 self.file_que.put(fname)
         return self.file_que.get()
-
-    def _judge_edge(self, roi):
-        return roi.max() > self.max_thresh and roi.var() > self.variance_thresh
 
 
 class TrainFlawDataGenerator:
@@ -251,6 +319,7 @@ class TrainFlawDataGenerator:
         self.shift_range = 8
         self.sampling_weights = None if sampling_weights is None else np.array(sampling_weights)
         self.class_file_dict = self._search_input_image_files()
+        self.pool = mp.Pool(process_num)
 
     def _search_input_image_files(self):
         class_file_dict = {}
@@ -272,38 +341,20 @@ class TrainFlawDataGenerator:
         weights /= sum(weights)
         weights[-1] = 1 - sum(weights[0:-1])
         while True:
+            ques = []
             labels_array[...] = np.random.choice(self.classes, size=self.num_flaws_per_batch, p=weights)
-            for i in range(self.num_flaws_per_batch):
-                image = self.augment_and_crop_image(labels_array[i])
-                images_array[i, ...] = image
+            for cls_idx in self.classes:
+                cnt = (labels_array.astype(int) == cls_idx).sum()
+                if cnt == 0:
+                    continue
+                for fname in self.get_next_file(cls_idx, cnt):
+                    ques.append(
+                        self.pool.apply_async(
+                            _augment_and_crop_flaw_image,
+                            (fname, self.output_image_size, self.num_channel, self.shift_range)))
+            for idx, que in enumerate(ques):
+                images_array[idx, ...] = que.get()
             yield images_array, labels_array
 
-    def augment_and_crop_image(self, label):
-        filename = self.get_next_file(label)
-        image = cv2.imread(filename, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
-        if len(image.shape) == 2:
-            assert self.num_channel == 1
-            image = image[..., None]
-
-        image = random_rotate_and_scale_and_shift(image, shift_range=self.shift_range)
-        height, width = image.shape[:2]
-        cx, cy = int(width / 2), int(height / 2)
-        offset = int(self.output_image_size / 2)
-        image = image[cy - offset:cy + offset, cx - offset:cx + offset]
-        return image
-
-    def get_next_file(self, label):
-        return np.random.choice(self.class_file_dict[label])
-
-
-def random_rotate_and_scale_and_shift(img, min_scale=1.0, max_scale=1.0, shift_range=8):
-    angle = int(random.uniform(0, 2 * np.pi))
-    scale = int(random.uniform(min_scale, max_scale))
-    shift = np.random.randint(-shift_range, shift_range + 1, 2)
-    height, width = img.shape[:2]
-    matrix = cv2.getRotationMatrix2D((int(width / 2), int(height / 2)), angle, scale)
-    matrix[:, 2] += shift
-    img = cv2.warpAffine(img, matrix, (width, height))
-    if len(img.shape) == 2:
-        img = img[..., None]
-    return img
+    def get_next_file(self, label, size):
+        return np.random.choice(self.class_file_dict[label], size=size)
