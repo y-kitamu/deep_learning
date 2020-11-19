@@ -3,11 +3,11 @@ all:
   cuda_visible_devices: 0
 dataset:
   overall:
-    train_data_root: /home/kitamura/dataset/NEUMetalSurfaceDefects/train
-    val_data_root: /home/kitamura/dataset/NEUMetalSurfaceDefects/valid
+    csv_filename: ${all.experiment_name}/train_data.csv
     batch_size: 120
     output_image_size: 32
     num_channel: 3
+    num_process: 6
   flawless:
     # flawless class (background and edge) indices
     classes: [0, 5]
@@ -16,12 +16,10 @@ dataset:
     max_thresh: 100
     variance_thresh: 300
     num_augment: 1
-    num_process: 6
   flaws:
     # flaw class indices
     classes: [1, 2, 3, 4]
     ratios: [0.1, 1.0, 1.0, 1.0]
-    num_process: 6
   augment:
     min_scale: 1.0
     max_scale: 1.0
