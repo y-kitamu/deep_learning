@@ -25,7 +25,15 @@ class Solver(object):
         callbacks (list of tf.keras.callbacks) : callbacks
     """
 
-    def __init__(self, model, data, loss_func=None, optimizer=None, aug_func=augmentation, callbacks=[]):
+    def __init__(self,
+                 model,
+                 data,
+                 loss_func=None,
+                 optimizer=None,
+                 aug_func=augmentation,
+                 callbacks=[],
+                 start_epoch=0,
+                 weights_path=None):
         self.model = model
         if len(data) == 6:
             self.x_train, self.y_train, self.x_val, self.y_val, self.x_test, self.y_test = data
@@ -41,7 +49,15 @@ class Solver(object):
         for cb in self.callback.callbacks:
             cb.solver = self
 
+        self.start_epoch = start_epoch
         self.lr_scheduler = None
+        self.load_weights(weights_path)
+
+    def load_weights(self, weights_path):
+        if weights_path is None or not os.path.exists(weights_path):
+            return
+        Logger().logging("load weigths of {}".format(weights_path))
+        self.model.load_weights(weights_path)
 
     def prepare_callbacks(self):
         callbacks = []
@@ -156,7 +172,7 @@ class Solver(object):
 
         self.train_ds = self.create_train_ds(batch_size)
         steps_per_epoch = math.ceil(self.x_train.shape[0] / batch_size)
-        for epoch in range(epochs):
+        for epoch in range(self.start_epoch, epochs):
             self.callback.on_epoch_begin(epoch)
             idx = 0
             for images, labels in self.train_ds:

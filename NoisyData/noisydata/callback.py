@@ -142,7 +142,13 @@ class HandleNoisyLabel(Callback):
                                    `gt_y_train` and `gt_y_val` is label encoding.
     """
 
-    def __init__(self, data, min_epoch=70, max_epoch=200, n_accumulate=10, update_label=False):
+    def __init__(self,
+                 data,
+                 min_epoch=70,
+                 max_epoch=200,
+                 n_accumulate=10,
+                 update_label=False,
+                 num_class=10):
         self.min_epoch = min_epoch
         self.max_epoch = max_epoch
         self.n_accumulate = n_accumulate
@@ -153,6 +159,7 @@ class HandleNoisyLabel(Callback):
         self.metrix = ["gt_val_accuracy"]
         self.gt_val_accuracy = 0.0
         self.is_update_label = update_label
+        self.num_class = num_class
 
         self.solver = None
         self.batch_size = None
@@ -189,6 +196,8 @@ class HandleNoisyLabel(Callback):
 
         if epoch < self.min_epoch - self.n_accumulate or not self.is_update_label:
             return
+        if epoch > self.max_epoch:
+            return
 
         steps_per_traindata = math.ceil(self.y_train.shape[0] / self.batch_size)
         for batch_idx in range(steps_per_traindata):
@@ -201,6 +210,18 @@ class HandleNoisyLabel(Callback):
             print("\r Update training labels... {} / {}".format(batch_idx, steps_per_traindata), end="")
         print("\r", end="")
 
+        y_train_pred_label = self.y_train_preds.mean(axis=0)
+        y_val_pred_label = tf.keras.utils.to_categorical(self.y_val_preds.sum(axis=0).argmax(axis=-1),
+                                                         num_classes=self.num_class)
         if epoch >= self.min_epoch:
-            self.y_train = self.y_train_preds.mean(axis=0)
-            self.y_val = tf.keras.utils.to_categorical(self.y_val_preds.sum(axis=1).argmax(axis=-1))
+            self.y_train = y_train_pred_label
+            self.y_val = y_val_pred_label
+
+        train_label_accuracy = float((y_train_pred_label.argmax(axis=1).astype(int).reshape(-1, 1)
+                                      == self.gt_y_train.astype(int)).sum()) / self.y_train.shape[0]
+        val_label_accuracy = float(
+            (y_val_pred_label.argmax(axis=1) == self.gt_y_val).sum()) / self.y_val.shape[0]
+        # import pdb
+        # pdb.set_trace()
+        Logger().logging("Train label accuracy : {:.3f}, Val label accuracy : {:.3f}".format(
+            train_label_accuracy, val_label_accuracy))

@@ -6,6 +6,9 @@ VERSION = "0.0.0"
 
 
 def load_requirements(f):
+    if not os.path.exists(f):
+        print("No such file or directory: {}".format(f))
+        return []
     return list(
         filter(None,
                [l.split("#", 1)[0].strip() for l in open(os.path.join(os.getcwd(), f)).readlines()]))
